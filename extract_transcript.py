@@ -20,18 +20,45 @@ def format_timestamp(seconds):
     s = int(seconds % 60)
     return f"{h:02d}:{m:02d}:{s:02d}"
 
+def parse_timecode(time_str):
+    """
+    Parses a timecode in the format H:MM:SS(.mmm) or M:SS(.mmm)
+    and returns the total number of seconds.
+    
+    Args:
+        time_str (str): Timecode string, e.g. "1:40:14.700" or "40:15.800"
+    
+    Returns:
+        float: Total seconds represented by the timecode.
+    """
+    try:
+        parts = time_str.split(':')
+        if len(parts) == 3:
+            # Format: H:MM:SS(.mmm)
+            hours = int(parts[0])
+            minutes = int(parts[1])
+            seconds = float(parts[2])
+            return hours * 3600 + minutes * 60 + seconds
+        elif len(parts) == 2:
+            # Format: M:SS(.mmm)
+            minutes = int(parts[0])
+            seconds = float(parts[1])
+            return minutes * 60 + seconds
+        else:
+            # If no colon is found, assume it's just seconds.
+            return float(time_str)
+    except ValueError:
+        return 0
+
 def extract_text(element):
     """
     Recursively extracts all text from an XML element and its children.
     
-    This function traverses an element and its child elements to gather the
-    text content (including child text and tail texts).
-    
     Args:
-        element (xml.etree.ElementTree.Element): The XML element to search.
+        element (xml.etree.ElementTree.Element): The XML element.
         
     Returns:
-        str: The combined text from the element.
+        str: Combined text content.
     """
     texts = []
     if element.text:
@@ -44,19 +71,17 @@ def extract_text(element):
 
 def extract_transcript(ttml_content, output_path, include_timestamps=False):
     """
-    Parses the content of a TTML file, extracts the included subtitle text
-    (optionally with timestamps), and saves the result in a text file.
+    Parses the TTML content, extracts subtitle text (with optional timestamps),
+    and saves the transcript to a text file.
     
-    The TTML content is parsed as XML. It searches for all <p> elements,
-    which are usually located under <body>/<div>. From the <span> elements within a paragraph,
-    the text is recursively extracted.
-    If the flag include_timestamps is set and a paragraph has a "begin" attribute,
-    that timestamp is formatted and prepended to the text.
+    This version mimics the JavaScript code by navigating to:
+      tt -> body -> div -> p
+    and then processing each <p> element.
     
     Args:
-        ttml_content (str): The content of the TTML file as a string.
-        output_path (str): The path where the transcript will be saved as a text file.
-        include_timestamps (bool): Determines whether timestamps should be included in the transcript.
+        ttml_content (str): The TTML file content.
+        output_path (str): Path to save the transcript.
+        include_timestamps (bool): Whether to include timestamps.
     """
     try:
         root = ET.fromstring(ttml_content)
@@ -66,32 +91,38 @@ def extract_transcript(ttml_content, output_path, include_timestamps=False):
 
     transcript = []
 
-    # Search for all <p> elements within the TTML structure, which are typically
-    # located under <body>/<div>. The XML namespace is ignored.
-    paragraphs = root.findall(".//{*}body/{*}div/{*}p")
-    for p in paragraphs:
-        # Search for <span> elements in the paragraph to extract the text.
-        span_elements = p.findall("{*}span")
-        if span_elements:
-            paragraph_text = ""
-            for span in span_elements:
-                # Recursively gather all text from the <span> and its children.
-                paragraph_text += extract_text(span) + " "
-            paragraph_text = paragraph_text.strip()
-            if paragraph_text:
-                # If timestamps are desired and a "begin" attribute is present,
-                # format the timestamp and prepend it to the paragraph.
-                if include_timestamps and 'begin' in p.attrib:
-                    try:
-                        seconds = float(p.attrib['begin'])
-                    except ValueError:
-                        seconds = 0
-                    timestamp = format_timestamp(seconds)
-                    transcript.append(f"[{timestamp}] {paragraph_text}")
-                else:
-                    transcript.append(paragraph_text)
+    # Navigate to <tt><body><div>
+    body = root.find('.//{*}body')
+    if body is None:
+        print("No <body> element found in TTML.")
+        return
+    div = body.find('{*}div')
+    if div is None:
+        print("No <div> element found in TTML.")
+        return
 
-    # Join the individual paragraphs with two newlines between them.
+    paragraphs = div.findall('{*}p')
+    for p in paragraphs:
+        # Only process paragraphs that contain <span> elements.
+        span_elements = p.findall('{*}span')
+        if not span_elements:
+            continue
+
+        paragraph_text = ""
+        for span in span_elements:
+            # Recursively extract text from each span.
+            paragraph_text += extract_text(span) + " "
+        paragraph_text = paragraph_text.strip()
+
+        if paragraph_text:
+            if include_timestamps and 'begin' in p.attrib:
+                begin_time_str = p.attrib['begin'].strip()
+                seconds = parse_timecode(begin_time_str)
+                timestamp = format_timestamp(seconds)
+                transcript.append(f"[{timestamp}] {paragraph_text}")
+            else:
+                transcript.append(paragraph_text)
+
     output_text = "\n\n".join(transcript)
     try:
         with open(output_path, "w", encoding="utf-8") as f:
@@ -102,18 +133,13 @@ def extract_transcript(ttml_content, output_path, include_timestamps=False):
 
 def find_ttml_files(directory):
     """
-    Recursively searches the specified directory for files with the ".ttml" extension.
-    
-    In each found file path, it checks if the string "PodcastContent" is present.
-    The section immediately following that string is extracted as an ID, which is used
-    for naming the output files.
+    Recursively finds TTML files in a directory.
     
     Args:
-        directory (str): The base directory in which to search for TTML files.
+        directory (str): Base directory to search.
         
     Returns:
-        list: A list of dictionaries, each containing the full path ('path')
-              and the extracted ID ('id').
+        list: List of dictionaries with 'path' and extracted 'id' for each TTML file.
     """
     ttml_files = []
     for root_dir, _, files in os.walk(directory):
@@ -130,8 +156,6 @@ def main():
     parser = argparse.ArgumentParser(
         description="Extracts subtitles from TTML files and saves them as text files."
     )
-    # For single file mode, two positional arguments can be provided:
-    # input_file: Path to the TTML file, output_file: Path to the output text file.
     parser.add_argument("input_file", nargs="?", help="Input TTML file (single file mode)")
     parser.add_argument("output_file", nargs="?", help="Output text file (single file mode)")
     parser.add_argument("--timestamps", action="store_true", help="Include timestamps in the transcript")
@@ -139,14 +163,13 @@ def main():
 
     include_timestamps = args.timestamps
 
-    # Create a "transcripts" directory to store the output files if it does not already exist.
+    # Create an output directory for transcripts.
     transcripts_dir = "./transcripts"
     if not os.path.exists(transcripts_dir):
         os.makedirs(transcripts_dir)
 
-    # If both input_file and output_file are provided and the timestamp flag is not set,
-    # single file mode is used.
-    if args.input_file and args.output_file and not include_timestamps:
+    if args.input_file and args.output_file:
+        # Single file mode.
         try:
             with open(args.input_file, "r", encoding="utf-8") as f:
                 ttml_content = f.read()
@@ -155,8 +178,7 @@ def main():
             sys.exit(1)
         extract_transcript(ttml_content, args.output_file, include_timestamps)
     else:
-        # Batch mode: Process all TTML files in a fixed directory.
-        # The base directory is located in the current user's home directory.
+        # Batch mode: process all TTML files in a fixed directory.
         ttml_base_dir = os.path.join(
             os.path.expanduser("~"),
             "Library/Group Containers/243LU875E5.groups.com.apple.podcasts/Library/Cache/Assets/TTML"
@@ -165,7 +187,7 @@ def main():
         files = find_ttml_files(ttml_base_dir)
         print(f"Found {len(files)} TTML files")
 
-        # To prevent output file name collisions, a counter is appended for duplicate IDs.
+        # To avoid filename collisions.
         filename_counts = {}
         for file in files:
             base_filename = file['id']
