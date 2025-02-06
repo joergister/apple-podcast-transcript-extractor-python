@@ -5,7 +5,12 @@ A Python tool for extracting transcripts from TTML files, typically used in Appl
 ## Features
 
 - **Single File Mode:** Extract a transcript from a specified TTML file and save it to an output text file.
-- **Batch Mode:** Automatically searches a fixed directory (in your home directory) for TTML files and extracts transcripts for all of them.
+- **Batch Mode:** Automatically searches for TTML files in the directory that the apple podcasts app stores them in 
+
+```bash
+Library/Group Containers/243LU875E5.groups.com.apple.podcasts/Library/Cache/Assets/TTML
+```
+and extracts transcripts for all of them.
 - **Timestamp Support:** Optionally include formatted timestamps (HH:MM:SS) for each transcript segment based on the `begin` attribute in the TTML file.
 
 ## Requirements
