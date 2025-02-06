@@ -2,6 +2,15 @@
 
 A Python tool for extracting transcripts from TTML files, typically used in Apple Podcasts. This script parses TTML files to extract subtitle text—optionally including timestamps—and saves the transcript as a plain text file. Inspired by https://github.com/mattdanielmurphy/apple-podcast-transcript-extractor
 
+## Why This Project Exists
+
+Existing tools do not allow for effective semantic search across transcripts of various podcast episodes.
+Apple Podcasts generates transcripts for most podcasts, but copying them is tedious due to restrictions on how much text can be selected at once. However, if an episode’s transcript is viewed or the episode is downloaded, the app caches the transcript in a specific folder in a machine-readable format.
+
+This script extracts those cached transcripts, making them easily accessible and converting them into a human-readable format. This enables efficient storage in vector databases and allows for semantic searching.
+
+## Features
+
 ## Features
 
 - **Single File Mode:** Extract a transcript from a specified TTML file and save it to an output text file.
